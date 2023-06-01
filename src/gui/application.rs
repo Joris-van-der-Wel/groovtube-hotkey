@@ -401,6 +401,11 @@ pub fn run_application() -> Result<(), AppRunError> {
     settings.window.resizable = false;
     settings.window.icon = Some(make_icon());
 
+    // force use of DirectX 12 instead of Vulkan on windows. Vulkan appears to be very buggy on
+    // computers with integrated intel graphics.
+    #[cfg(target_os = "windows")]
+    std::env::set_var("WGPU_BACKEND", "dx12");
+
     // this function will call process::exit() unless there was a startup error
     MyApplication::run(settings)?;
     Ok(())
