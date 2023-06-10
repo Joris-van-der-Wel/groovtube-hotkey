@@ -31,4 +31,6 @@ pub enum Message {
     DeviceEvent(DeviceEvent),
     AddHotkey,
     HotkeyChange(usize, HotkeyChange),
+    LinkPress(String),
+    LinkOpened(bool), // true if success, false if failed
 }

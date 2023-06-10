@@ -30,6 +30,15 @@ pub enum ConfigError {
     SendError { #[from] source: SendError },
 }
 
+#[derive(Error, Debug)]
+pub enum LinkOpenError {
+    #[error("Failed to open link: {source}")]
+    IOError { #[from] source: io::Error },
+
+    #[error("Passed string is not HTTP")]
+    NotHttp,
+}
+
 impl ConfigError {
     pub fn is_file_not_found_error(&self) -> bool {
         match self {

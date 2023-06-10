@@ -2,7 +2,7 @@ use futures::channel::mpsc::Sender;
 use futures::SinkExt;
 use iced::{
     Alignment, Application, Command, Element, Event, Font, Length, Settings, Subscription,
-    alignment, window,
+    window,
 };
 use iced::time::{every as iced_time_every};
 use iced::theme::{self, Theme};
@@ -20,6 +20,8 @@ use crate::device::connection::connect_device_subscription;
 use crate::device::types::{DeviceEvent, DeviceState};
 use crate::error::{AppRunError, error_msgbox};
 use crate::gui::executor::MyExecutor;
+use crate::gui::open::open_link;
+use crate::gui::style::{TextButtonStyleSheet};
 use crate::gui::types::{Message, HotkeyChange, HotkeyModifier};
 use crate::resources::MUI_SYMBOLS_OUTLINED;
 use crate::sim::breath_input_sim::breath_input_sim;
@@ -127,6 +129,22 @@ impl MyApplication {
 
         Command::perform(work(), Message::WriteComplete)
     }
+
+    fn open_link(&self, url: String) -> Command<Message> {
+        let work = move || {
+            async move {
+                match open_link(&url).await {
+                    Ok(_) => true,
+                    Err(err) => {
+                        error_msgbox("Failed to open link", &err);
+                        false
+                    },
+                }
+            }
+        };
+
+        return Command::perform(work(), Message::LinkOpened)
+    }
 }
 
 impl Application for MyApplication {
@@ -184,6 +202,9 @@ impl Application for MyApplication {
                 }
             },
 
+            Message::LinkPress(url) => {
+                return self.open_link(url);
+            },
             Message::EventOccurred(Event::Window(window::Event::CloseRequested)) => {
                 println!("Close requested");
                 self.before_close();
@@ -341,38 +362,56 @@ impl Application for MyApplication {
             add_hotkey_button = add_hotkey_button.on_press(Message::AddHotkey);
         }
 
+        let device_state = match self.latest_device_state {
+            DeviceState::Initial => "".to_string(),
+            DeviceState::Scanning => "Scanning…".to_string(),
+            DeviceState::Connecting => "Connecting…".to_string(),
+            DeviceState::Connected => {
+                let percentage = self.latest_breath_value;
+                if percentage < 0 {
+                    format!("{}% sip", -percentage)
+                }
+                else {
+                    format!("{}% puff", percentage)
+                }
+            },
+        };
+
         container(
             column![
-                text(
-                    match self.latest_device_state {
-                        DeviceState::Initial => "".to_string(),
-                        DeviceState::Scanning => "Scanning…".to_string(),
-                        DeviceState::Connecting => "Connecting…".to_string(),
-                        DeviceState::Connected => {
-                            let percentage = self.latest_breath_value;
-                            if percentage < 0 {
-                                format!("{}% sip", -percentage)
-                            }
-                            else {
-                                format!("{}% puff", percentage)
-                            }
-                        },
-                    }
-                ).width(Length::Fill).horizontal_alignment(alignment::Horizontal::Center),
+                column![
+                    text(device_state),
 
-                horizontal_rule(10),
+                    horizontal_rule(10),
 
-                Column::with_children(
-                    self.config.hotkeys
-                    .iter()
-                    .enumerate()
-                    .map(|(index, config)| hotkey_form(index, config))
-                    .collect()
-                ).spacing(30),
+                    Column::with_children(
+                        self.config.hotkeys
+                            .iter()
+                            .enumerate()
+                            .map(|(index, config)| hotkey_form(index, config))
+                            .collect()
+                    )
+                        .spacing(30)
+                        .width(Length::Shrink),
 
-                column![add_hotkey_button].align_items(Alignment::Center).width(Length::Fill).spacing(20)
-            ]
-            .spacing(30)
+                    column![add_hotkey_button]
+                        .align_items(Alignment::Center)
+                        .width(Length::Fill)
+                        .spacing(20),
+                ]
+                    .spacing(30)
+                    .width(Length::Fill)
+                    .align_items(Alignment::Center)
+                    .height(Length::Fill),
+
+                button(
+                    text("github.com/Joris-van-der-Wel/groovtube-hotkey")
+                        .size(14)
+                )
+                    .style(theme::Button::Custom(Box::new(TextButtonStyleSheet)))
+                    .on_press(Message::LinkPress("https://github.com/Joris-van-der-Wel/groovtube-hotkey".to_string())),
+
+            ].align_items(Alignment::Center),
         )
         .width(Length::Fill)
         .padding(20)
