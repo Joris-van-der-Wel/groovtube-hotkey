@@ -68,27 +68,25 @@ impl MyApplication {
         let mut sender = self.breath_input_sim_sender.1.clone();
         let config_io = self.config_io.clone();
 
-        let work = move || {
-            async move {
-                let config = config_io.read().await.unwrap_or_else(|err| {
-                    if err.is_file_not_found_error() {
-                        // this is probably the first start of the app
-                        println!("Config file not found, using defaults");
-                    }
-                    else {
-                        error_msgbox("Failed to load config", &err);
-                    }
-                    Config::default()
-                });
+        let fut = async move {
+            let config = config_io.read().await.unwrap_or_else(|err| {
+                if err.is_file_not_found_error() {
+                    // this is probably the first start of the app
+                    println!("Config file not found, using defaults");
+                }
+                else {
+                    error_msgbox("Failed to load config", &err);
+                }
+                Config::default()
+            });
 
-                sender.send(BreathInputSimCommand::SetConfig(config.clone())).await
-                    .expect("Failed to send config to breath_input_sim");
+            sender.send(BreathInputSimCommand::SetConfig(config.clone())).await
+                .expect("Failed to send config to breath_input_sim");
 
-                config
-            }
+            config
         };
 
-        Command::perform(work(), Message::ConfigLoadComplete)
+        Command::perform(fut, Message::ConfigLoadComplete)
     }
 
     fn save_config(&self) -> Command<Message> {
@@ -96,54 +94,48 @@ impl MyApplication {
         let config = self.config.clone();
         let config_io = self.config_io.clone();
 
-        let work = move || {
-            async move {
-                match config_io.save(config).await {
-                    Ok(_) => true,
-                    Err(err) => {
-                        if displayed_config_save_error {
-                            eprintln!("Failed to save config: {:?}", err);
-                        }
-                        else {
-                            error_msgbox("Failed to save config", &err);
-                        }
-                        false
-                    },
-                }
+        let fut = async move {
+            match config_io.save(config).await {
+                Ok(_) => true,
+                Err(err) => {
+                    if displayed_config_save_error {
+                        eprintln!("Failed to save config: {:?}", err);
+                    }
+                    else {
+                        error_msgbox("Failed to save config", &err);
+                    }
+                    false
+                },
             }
         };
 
-        return Command::perform(work(), Message::ConfigSaveComplete);
+        return Command::perform(fut, Message::ConfigSaveComplete);
     }
 
     fn send_config(&self) -> Command<Message> {
         let mut sender = self.breath_input_sim_sender.1.clone();
         let config = self.config.clone();
 
-        let work = move || {
-            async move {
-                sender.send(BreathInputSimCommand::SetConfig(config)).await
-                    .expect("Failed to send config to breath_input_sim");
-            }
+        let fut = async move {
+            sender.send(BreathInputSimCommand::SetConfig(config)).await
+                .expect("Failed to send config to breath_input_sim");
         };
 
-        Command::perform(work(), Message::WriteComplete)
+        Command::perform(fut, Message::WriteComplete)
     }
 
     fn open_link(&self, url: String) -> Command<Message> {
-        let work = move || {
-            async move {
-                match open_link(&url).await {
-                    Ok(_) => true,
-                    Err(err) => {
-                        error_msgbox("Failed to open link", &err);
-                        false
-                    },
-                }
+        let fut = async move {
+            match open_link(&url).await {
+                Ok(_) => true,
+                Err(err) => {
+                    error_msgbox("Failed to open link", &err);
+                    false
+                },
             }
         };
 
-        return Command::perform(work(), Message::LinkOpened)
+        return Command::perform(fut, Message::LinkOpened)
     }
 }
 
