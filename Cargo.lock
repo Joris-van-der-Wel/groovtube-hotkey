@@ -1428,6 +1428,7 @@ name = "groovtube-hotkey"
 version = "1.0.0"
 dependencies = [
  "btleplug",
+ "core-foundation 0.9.3",
  "directories-next",
  "enum-iterator",
  "fd-lock",
