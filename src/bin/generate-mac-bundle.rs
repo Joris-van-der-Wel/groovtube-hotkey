@@ -17,6 +17,9 @@ fn make_info_plist(mut output: File, version: &str) -> Result<(), std::io::Error
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 

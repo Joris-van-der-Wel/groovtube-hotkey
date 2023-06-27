@@ -8,6 +8,7 @@ pub mod sim;
 pub mod error;
 pub mod resources;
 pub mod config;
+pub mod os;
 
 pub fn run(mut _args: env::Args) -> Result<(), AppRunError> {
     run_application()?;

@@ -6,6 +6,7 @@ default-run = "groovtube-hotkey"
 
 [dependencies]
 btleplug = "0.10.5"
+core-foundation = "0.9.3"
 directories-next = "2.0.0"
 enum-iterator = "1.4.1"
 fd-lock = "3.0.12"
