@@ -11,6 +11,16 @@ pub const POLL_DELAY: u64 = 10;
 pub const CONNECT_DELAY: u64 = 1000;
 
 /**
+ * How long (milliseconds) a write to a characteristic may take.
+ */
+pub const WRITE_DEADLINE: u64 = 2000;
+
+/**
+ * How long (milliseconds) checking if the peripheral is still connected may take
+ */
+pub const IS_CONNECTED_DEADLINE: u64 = 2000;
+
+/**
  * The UUID of the Bluetooth BLE service for Melody Smart
  */
 pub const MELODY_SMART_SERVICE: &str = "bc2f4cc6-aaef-4351-9034-d66268e328f0";

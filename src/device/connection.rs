@@ -1,23 +1,28 @@
 use std::convert::Infallible;
+use std::error::Error;
 use iced::subscription::{self, Subscription};
 use futures::{StreamExt, SinkExt};
 use futures::channel::mpsc::Sender;
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType};
-use btleplug::platform::{Manager, Peripheral};
+use btleplug::platform::{Adapter, Manager, Peripheral};
 use tokio::spawn;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tokio::time::{sleep, Duration};
 
-use crate::device::constants::{make_melody_smart_service_uuid, make_melody_smart_data_uuid, CONNECT_DELAY, POLL_DELAY, COMMAND_REQUEST_BREATH, BREATH_RANGE};
+use crate::device::constants::{make_melody_smart_service_uuid, make_melody_smart_data_uuid, CONNECT_DELAY, POLL_DELAY, COMMAND_REQUEST_BREATH, BREATH_RANGE, IS_CONNECTED_DEADLINE, WRITE_DEADLINE};
 use crate::device::types::{DeviceEvent, DeviceState};
 use crate::error::DeviceError;
 
+#[derive(Debug)]
 enum ConnectionState {
-    Initial,
-    Scanning,
+    Scanning {
+        retry: bool,
+        no_permission: bool,
+        adapters: Option<Vec<Adapter>>,
+    },
     Connecting {
-        peripheral: Peripheral
+        peripheral: Peripheral,
     },
     Connected {
         peripheral: Peripheral,
@@ -25,7 +30,7 @@ enum ConnectionState {
     },
 }
 
-async fn find_peripheral(manager: &Manager) -> Result<Peripheral, DeviceError> {
+async fn start_scanning(manager: &Manager) -> Result<Vec<Adapter>, DeviceError> {
     let adapters = manager.adapters().await?;
     let melody_smart_service_uuid = make_melody_smart_service_uuid();
 
@@ -34,49 +39,54 @@ async fn find_peripheral(manager: &Manager) -> Result<Peripheral, DeviceError> {
     };
 
     for adapter in &adapters {
-        println!("Start scan on adapter {}", adapter.adapter_info().await.unwrap_or("UNKNOWN".to_string()));
+        println!("Scanning using adapter {}...", adapter.adapter_info().await.unwrap_or("UNKNOWN".to_string()));
         adapter.start_scan(filter.clone()).await?;
     }
 
-    loop {
-        for adapter in &adapters {
-            let peripherals = match adapter.peripherals().await {
-                Ok(v) => v,
+    Ok(adapters)
+}
+
+async fn find_peripheral(adapters: &Vec<Adapter>) -> Result<Option<Peripheral>, DeviceError> {
+    let melody_smart_service_uuid = make_melody_smart_service_uuid();
+
+    for adapter in adapters {
+        let peripherals = match adapter.peripherals().await {
+            Ok(v) => v,
+            Err(err) => {
+                eprintln!("Failed to query BLE adapter for peripherals: {}", err);
+                continue;
+            },
+        };
+
+        for peripheral in peripherals {
+            let properties = peripheral.properties().await;
+
+            match properties {
                 Err(err) => {
-                    eprintln!("Failed to query BLE adapter for peripherals: {}", err);
-                    continue;
+                    eprintln!("Could not query peripheral for properties: {:?}", err);
                 },
-            };
-
-            for peripheral in peripherals {
-                let properties = peripheral.properties().await;
-
-                match properties {
-                    Err(err) => {
-                        eprintln!("Could not query peripheral for properties: {:?}", err);
-                    },
-                    Ok(None) => {
-                        eprintln!("Peripheral has no properties");
-                    },
-                    Ok(Some(properties)) => {
-                        // Some environments ignore the filter, so make sure to check the service uuid again
-                        if properties.services.contains(&melody_smart_service_uuid) {
-                            println!(
-                                "Using peripheral {} {:?} {} {:?}",
-                                properties.address,
-                                properties.address_type,
-                                properties.local_name.unwrap_or(String::from("NONE")),
-                                properties.services,
-                            );
-                            return Ok(peripheral);
-                        }
+                Ok(None) => {
+                    eprintln!("Peripheral has no properties");
+                },
+                Ok(Some(properties)) => {
+                    // Some environments ignore the filter, so make sure to check the service uuid again
+                    if properties.services.contains(&melody_smart_service_uuid) {
+                        println!(
+                            "Using peripheral {} {:?} {} {:?}",
+                            properties.address,
+                            properties.address_type,
+                            properties.local_name.unwrap_or(String::from("NONE")),
+                            properties.services,
+                        );
+                        return Ok(Some(peripheral));
                     }
+
                 }
             }
         }
-
-        sleep(Duration::from_millis(100)).await;
     }
+
+    Ok(None)
 }
 
 async fn connect_peripheral(peripheral: &Peripheral) -> Result<Characteristic, DeviceError> {
@@ -108,64 +118,102 @@ async fn connect_peripheral(peripheral: &Peripheral) -> Result<Characteristic, D
     Err(DeviceError::MissingCharacteristic)
 }
 
-async fn advance_state(state: ConnectionState, manager: &Manager) -> (ConnectionState, bool) {
+async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionState {
     match state {
-        ConnectionState::Initial => {
-            (ConnectionState::Scanning, true)
-        },
-        ConnectionState::Scanning => {
-            let peripheral = match find_peripheral(&manager).await {
-                Ok(v) => v,
-                Err(err) => {
-                    eprintln!("Finding peripheral failed: {:?}", err);
-                    sleep(Duration::from_millis(CONNECT_DELAY)).await;
-                    return (ConnectionState::Scanning, false);
+        ConnectionState::Scanning { adapters, retry, .. } => {
+            if retry {
+                sleep(Duration::from_millis(CONNECT_DELAY)).await;
+            }
+
+            let adapters = match adapters {
+                None => {
+                    match start_scanning(&manager).await {
+                        Ok(adapters) => Some(adapters),
+                        Err(err) => {
+                            eprintln!("Scanning failed {:?}", err);
+
+                            let mut no_permission_error = false;
+                            if let Some(source) = err.source() {
+                                if let Some(btleplug::Error::PermissionDenied) = source.downcast_ref::<btleplug::Error>() {
+                                    no_permission_error = true;
+                                }
+                            }
+
+                            return ConnectionState::Scanning { adapters: None, retry: true, no_permission: no_permission_error };
+                        },
+                    }
                 },
+                Some(adapters) => Some(adapters),
             };
 
-            (ConnectionState::Connecting { peripheral }, true)
+            match find_peripheral(adapters.as_ref().unwrap()).await {
+                Ok(Some(peripheral)) => {
+                    ConnectionState::Connecting { peripheral }
+                },
+                Ok(None) => {
+                    eprintln!("No peripherals matched");
+                    ConnectionState::Scanning { adapters, retry: true, no_permission: false }
+                },
+                Err(err) => {
+                    eprintln!("Finding peripheral failed: {:?}", err);
+                    ConnectionState::Scanning { adapters, retry: true, no_permission: false }
+                },
+            }
         },
         ConnectionState::Connecting { peripheral } => {
             let data_char = match connect_peripheral(&peripheral).await {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!("Connecting to peripheral failed: {:?}", err);
-                    sleep(Duration::from_millis(CONNECT_DELAY)).await;
                     // If a peripheral fails to connect it might be because of the error:
                     //   Btle { source: Other("Error { code: HRESULT(0x80000013), message: \"The object has been closed.\" }") }
                     // In which case we have to obtain a new Peripheral. So go back to the scanning state
-                    return (ConnectionState::Scanning , true);
+                    return ConnectionState::Scanning { adapters: None, retry: true, no_permission: false };
                 },
             };
 
             println!("Peripheral ready");
-
-            (ConnectionState::Connected { peripheral, data_char }, true)
+            ConnectionState::Connected { peripheral, data_char }
         },
         ConnectionState::Connected { peripheral, data_char } => {
-            match peripheral.is_connected().await {
-                Err(err) => {
-                    eprintln!("Error checking for connection state: {:?}", err);
+            tokio::select! {
+                _ = sleep(Duration::from_millis(IS_CONNECTED_DEADLINE)) => {
+                    // macOS
+                    eprintln!("Checking for connection status took too long");
                     sleep(Duration::from_millis(CONNECT_DELAY)).await;
-                    return (ConnectionState::Scanning , true);
-                },
-                Ok(false) => {
-                    eprintln!("Connection lost");
-                    sleep(Duration::from_millis(CONNECT_DELAY)).await;
-                    return (ConnectionState::Scanning , true);
-                },
-                Ok(true) => {},
+                    ConnectionState::Scanning { adapters: None, retry: true, no_permission: false }
+                }
+                result = peripheral.is_connected() => match result {
+                    Err(err) => {
+                        eprintln!("Error checking for connection state: {:?}", err);
+                        sleep(Duration::from_millis(CONNECT_DELAY)).await;
+                        ConnectionState::Scanning { adapters: None, retry: true, no_permission: false }
+                    },
+                    Ok(false) => {
+                        eprintln!("Connection lost");
+                        sleep(Duration::from_millis(CONNECT_DELAY)).await;
+                        ConnectionState::Scanning { adapters: None, retry: true, no_permission: false }
+                    },
+                    Ok(true) => ConnectionState::Connected { peripheral, data_char },
+                }
             }
-
-            (ConnectionState::Connected { peripheral, data_char, }, false)
         },
     }
 }
 
 async fn request_breath(peripheral: &Peripheral, data_char: &Characteristic) {
-    if let Err(err) = peripheral.write(&data_char, &COMMAND_REQUEST_BREATH, WriteType::WithResponse).await {
-        eprintln!("Failed to send to data characteristic: {:?}", err)
-    }
+    let fut = peripheral.write(&data_char, &COMMAND_REQUEST_BREATH, WriteType::WithResponse);
+
+    tokio::select! {
+        _ = sleep(Duration::from_millis(WRITE_DEADLINE)) => {
+            eprintln!("Sending to data characteristic took too long");
+        }
+        result = fut => {
+            if let Err(err) = result {
+                eprintln!("Failed to send to data characteristic: {:?}", err);
+            }
+        }
+    };
 }
 
 fn read_notifications_task(cancel: CancellationToken, peripheral: &Peripheral, mut senders: Vec<Sender<DeviceEvent>>) -> JoinHandle<Result<(), DeviceError>> {
@@ -220,7 +268,8 @@ fn read_notifications_task(cancel: CancellationToken, peripheral: &Peripheral, m
 }
 
 async fn connect_device(cancel: CancellationToken, mut senders: Vec<Sender<DeviceEvent>>) -> Infallible {
-    let mut state = Some(ConnectionState::Initial);
+    let mut connection_state = Some(ConnectionState::Scanning { adapters: None, retry: false, no_permission: false });
+    let mut previous_device_state: Option<DeviceState> = None;
     let mut read_notifications_task_handle: Option<JoinHandle<Result<(), DeviceError>>> = None;
     let manager = Manager::new().await.unwrap();
     let mut connection_cancel = cancel.child_token();
@@ -228,24 +277,28 @@ async fn connect_device(cancel: CancellationToken, mut senders: Vec<Sender<Devic
     // note: subscription::channel expects the future to never resolve (Infallible)
     // so this loop is not stopped if `cancel` is cancelled.
     loop {
-        let (new_state, changed) = advance_state(state.take().unwrap(), &manager).await;
+        let new_connection_state = advance_state(connection_state.take().unwrap(), &manager).await;
 
-        if changed {
+        let device_state = match &new_connection_state {
+            ConnectionState::Scanning { no_permission, .. } => DeviceState::Scanning {
+                no_permission: *no_permission,
+            },
+            ConnectionState::Connecting { .. } => DeviceState::Connecting,
+            ConnectionState::Connected { .. } => DeviceState::Connected,
+        };
+
+        if previous_device_state.is_none() || previous_device_state.as_ref().unwrap() != &device_state {
             for sender in &mut senders {
-                let event = DeviceEvent::StateChange(match &new_state {
-                    ConnectionState::Initial => DeviceState::Initial,
-                    ConnectionState::Scanning => DeviceState::Scanning,
-                    ConnectionState::Connecting { .. } => DeviceState::Connecting,
-                    ConnectionState::Connected { .. } => DeviceState::Connected,
-                });
-
+                let event = DeviceEvent::StateChange(device_state.clone());
                 sender.send(event).await.expect("Failed to send DeviceEvent")
             }
+
+            previous_device_state = Some(device_state);
         }
 
-        state = Some(new_state);
+        connection_state = Some(new_connection_state);
 
-        match &state {
+        match &connection_state {
             Some(ConnectionState::Connected { peripheral, data_char }) => {
                 // Connected, start task to read notifications if not already started
                 // and send ?b commands to the device every 10ms
@@ -259,8 +312,8 @@ async fn connect_device(cancel: CancellationToken, mut senders: Vec<Sender<Devic
                 connection_cancel.cancel();
                 connection_cancel = CancellationToken::new();
 
-                println!("Waiting for read notifications task to stop");
                 if let Some(handle) = read_notifications_task_handle.take() {
+                    println!("Waiting for read notifications task to stop");
                     handle.await
                         .expect("Failed to join read notifications task")
                         .expect("Error during read notifications task");

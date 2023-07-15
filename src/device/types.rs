@@ -1,7 +1,7 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceState {
     Initial,
-    Scanning,
+    Scanning { no_permission: bool },
     Connecting,
     Connected,
 }
