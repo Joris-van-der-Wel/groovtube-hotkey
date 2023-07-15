@@ -356,7 +356,8 @@ impl Application for MyApplication {
 
         let device_state = match self.latest_device_state {
             DeviceState::Initial => "".to_string(),
-            DeviceState::Scanning => "Scanning…".to_string(),
+            DeviceState::Scanning { no_permission: false } => "Scanning…".to_string(),
+            DeviceState::Scanning { no_permission: true } => "Not allowed to access Bluetooth!".to_string(),
             DeviceState::Connecting => "Connecting…".to_string(),
             DeviceState::Connected => {
                 let percentage = self.latest_breath_value;
