@@ -3,74 +3,7 @@ use std::fs::{copy, create_dir, File};
 use std::path::PathBuf;
 use std::io::Write;
 
-fn make_info_plist(mut output: File, version: &str) -> Result<(), std::io::Error> {
-    // Should escape dynamic values here, however at the moment only the version string is dynamic.
-    // So we can get away with not escaping for now.
-
-    // CFBundleName should be max 15 characters
-
-    write!(output, r##"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-
-	<key>CFBundleIdentifier</key>
-	<string>nl.groovtube.groovtube-hotkey</string>
-
-	<key>CFBundleName</key>
-	<string>GroovTubeHotkey</string>
-
-	<key>CFBundleDisplayName</key>
-	<string>GroovTube Hotkey</string>
-
-	<key>CFBundleVersion</key>
-	<string>{version}</string>
-
-	<key>CFBundleShortVersionString</key>
-	<string>{version}</string>
-
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright (c) 2023 Joris van der Wel</string>
-
-	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
-
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
-
-	<key>CFBundleExecutable</key>
-	<string>GroovTubeHotkey</string>
-
-	<key>CFBundleSupportedPlatforms</key>
-	<array>
-		<string>MacOSX</string>
-	</array>
-
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>GroovTube Hotkey wants to automatically connect to the GroovTube peripheral</string>
-
-	<key>NSHighResolutionCapable</key>
-	<true/>
-
-	<key>NSSupportsSuddenTermination</key>
-	<true/>
-
-	<key>CFBundleIconFile</key>
-	<string>icon.icns</string>
-
-</dict>
-</plist>
-"##, version=version)
-}
+const INFO_PLIST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Info.plist"));
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -95,8 +28,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     create_dir(&contents_macos_path)?;
     create_dir(&contents_resources_path)?;
 
-    let info_plist = File::create(&info_plist_path)?;
-    make_info_plist(info_plist, env!("CARGO_PKG_VERSION"))?;
+    let mut info_plist = File::create(&info_plist_path)?;
+    info_plist.write_all(INFO_PLIST)?;
 
     copy(binary_path, contents_macos_path.join("GroovTubeHotkey"))?;
     copy(icns_path, contents_resources_path.join("icon.icns"))?;

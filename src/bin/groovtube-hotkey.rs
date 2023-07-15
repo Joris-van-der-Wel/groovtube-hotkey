@@ -3,6 +3,11 @@ use msgbox::IconType;
 use groovtube_hotkey::run;
 use groovtube_hotkey::error::{error_msgbox, AppRunError, ConfigError};
 
+// This embedded Info.plist is used when launching the binary directly, instead of the app bundle.
+// Example: `open ./target/debug/groovtube-hotkey`
+#[cfg(all(target_os = "macos"))]
+embed_plist::embed_info_plist!(concat!(env!("OUT_DIR"), "/Info.plist"));
+
 #[cfg(target_os = "windows")]
 fn windows_init() {
     groovtube_hotkey::os::windows::hide_console_window();
