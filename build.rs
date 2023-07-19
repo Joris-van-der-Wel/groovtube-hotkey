@@ -74,7 +74,7 @@ fn make_info_plist() {
 	<string>public.app-category.utilities</string>
 
 	<key>CFBundleExecutable</key>
-	<string>GroovTubeHotkey</string>
+	<string>groovtube</string>
 
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
