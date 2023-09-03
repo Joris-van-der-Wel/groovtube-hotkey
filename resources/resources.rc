@@ -1,5 +1,5 @@
 /*
- * To compile this file into resources.res:
+ * To compile this file into resources.lib:
  * 1. Open the "Developer PowerShell for VS 2022"
  * 2. `cd` to this directory
  * 3. run: `rc /fo resources.lib resources.rc`
