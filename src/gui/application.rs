@@ -1,16 +1,17 @@
 use futures::channel::mpsc::Sender;
 use futures::SinkExt;
 use iced::{
-    Alignment, Application, Command, Element, Event, Font, Length, Settings, Subscription,
+    Alignment, Application, Command, Element, Event, Length, Settings, Subscription,
     window,
 };
+use iced::font::{self, Font};
 use iced::time::{every as iced_time_every};
 use iced::theme::{self, Theme};
 use iced::widget::{
     Column, PickList, button, column, container, horizontal_rule, row, text, text_input, tooltip,
 };
 use iced::window::icon;
-use iced_native::widget::tooltip::{Position as TooltipPosition};
+use iced::widget::tooltip::{Position as TooltipPosition};
 use std::time::{Duration};
 use tokio_util::sync::{CancellationToken};
 
@@ -23,14 +24,11 @@ use crate::gui::executor::MyExecutor;
 use crate::gui::open::open_link;
 use crate::gui::style::{TextButtonStyleSheet};
 use crate::gui::types::{Message, HotkeyChange, HotkeyModifier};
-use crate::resources::MUI_SYMBOLS_OUTLINED;
+use crate::resources::{MUI_SYMBOLS_OUTLINED_BYTES, MUI_SYMBOLS_OUTLINED_FAMILY};
 use crate::sim::breath_input_sim::breath_input_sim;
 use crate::sim::types::{BreathInputSimCommand, Button as InputSimButton, Button};
 
-const MUI_SYMBOLS_OUTLINED_FONT: Font = Font::External {
-    name: "mui-symbols-outlined",
-    bytes: MUI_SYMBOLS_OUTLINED,
-};
+const MUI_SYMBOLS_OUTLINED_FONT: Font = Font::with_name(MUI_SYMBOLS_OUTLINED_FAMILY);
 
 pub struct ApplicationFlags {
     config_io: ConfigIO,
@@ -62,6 +60,10 @@ pub struct MyApplication {
 impl MyApplication {
     fn before_close(&mut self) {
         self.app_cancel.cancel();
+    }
+
+    fn load_symbols_font(&self) -> Command<Message> {
+        font::load(MUI_SYMBOLS_OUTLINED_BYTES).map(Message::SymbolsFontLoadComplete)
     }
 
     fn load_config(&self) -> Command<Message> {
@@ -164,7 +166,10 @@ impl Application for MyApplication {
             input_sim_buttons: InputSimButton::all(),
         };
 
-        let command = app.load_config();
+        let command = Command::batch(vec![
+            app.load_symbols_font(),
+            app.load_config(),
+        ]);
         (app, command)
     }
 
@@ -174,6 +179,10 @@ impl Application for MyApplication {
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
         match message {
+            Message::SymbolsFontLoadComplete(result) => {
+                result.expect("Failed to load symbols font");
+                println!("Symbols font load complete");
+            },
             Message::ConfigLoadComplete(config) => {
                 println!("Config load complete");
                 self.config = config;
@@ -273,7 +282,7 @@ impl Application for MyApplication {
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            iced_native::subscription::events().map(Message::EventOccurred),
+            iced::subscription::events().map(Message::EventOccurred),
             iced_time_every(Duration::from_secs(1)).map(|_| Message::ApplyDirtyConfig),
             connect_device_subscription(
                 self.app_cancel.clone(),
@@ -433,10 +442,14 @@ pub fn run_application() -> Result<(), AppRunError> {
     settings.window.resizable = false;
     settings.window.icon = Some(make_icon());
 
-    // force use of DirectX 12 instead of Vulkan on windows. Vulkan appears to be very buggy on
-    // computers with integrated intel graphics.
-    #[cfg(target_os = "windows")]
-    std::env::set_var("WGPU_BACKEND", "dx12");
+    // This is no longer necessary because iced is forced to use the software renderer (by removing
+    // the wgpu feature).
+    // However should the wgpu feature be enabled again in the future, make sure to test this
+    // program with old crappy integrated intel graphics. The following lines force
+    // DirectX 12 to be used instead of Vulkan on windows, vulkan appears to be very buggy on old
+    // intel CPUs.
+    // #[cfg(target_os = "windows")]
+    // std::env::set_var("WGPU_BACKEND", "dx12");
 
     // this function will call process::exit() unless there was a startup error
     MyApplication::run(settings)?;

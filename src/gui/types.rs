@@ -1,4 +1,5 @@
 use iced::{Event};
+use iced::font::{Error as FontError};
 
 use crate::config::types::{BreathDirection, Config};
 use crate::device::types::{DeviceEvent};
@@ -26,6 +27,7 @@ pub enum Message {
     EventOccurred(Event),
     ApplyDirtyConfig,
     WriteComplete(()),
+    SymbolsFontLoadComplete(Result<(), FontError>),
     ConfigLoadComplete(Config),
     ConfigSaveComplete(bool), // true if success, false if failed
     DeviceEvent(DeviceEvent),
