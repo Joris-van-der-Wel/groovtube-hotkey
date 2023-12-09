@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix
+    xmlns="http://wixtoolset.org/schemas/v4/wxs"
+    xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+>
+    <Package
+        Manufacturer="Joris van der Wel"
+        Name="GroovTube Hotkey"
+        Version="$(Version)"
+        Language="1033"
+        ProductCode="28761e63-db75-49d7-be10-9386f7d897be"
+        UpgradeCode="ff655d21-6d0f-4203-bbf2-b20d6faea4e2"
+        Compressed="yes"
+        Scope="perUserOrMachine"
+    >
+        <MajorUpgrade DowngradeErrorMessage="A later version of [ProductName] is already installed. Setup will now exit." />
+
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="MainFeature" Title="GroovTubeHotkey" AllowAbsent="no">
+            <ComponentRef Id="MainComponent" />
+            <ComponentRef Id="MainShortcut" />
+        </Feature>
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="APPLICATIONFOLDER" Name="GroovTubeHotkey">
+                <Component Id="MainComponent" Guid="09d78e70-563a-4514-9e01-f6b25ec1c634">
+                    <File Id="MainExecutable" KeyPath="yes" Source="..\target\release\groovtube-hotkey.exe" />
+                </Component>
+            </Directory>
+        </StandardDirectory>
+
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="SHORTCUTFOLDER" Name="GroovTubeHotkey">
+                <Component Id="MainShortcut" Guid="f606bfad-77db-454b-bcc2-fe89957024a9">
+                    <Shortcut
+                        Id="MainShortcutShortcut"
+                        Name="GroovTube Hotkey"
+                        Description="My Application Description"
+                        Target="[#MainExecutable]"
+                        WorkingDirectory="APPLICATIONFOLDER"
+                    />
+                    <RemoveFolder Id="CleanupShortCut" On="uninstall" />
+                    <!--
+                    RegistryValue is required as a Shortcut cannot serve as the KeyPath for a component when installing
+                    non-advertised shortcuts for the current users.
+                    -->
+                    <RegistryValue
+                        Root="HKCU"
+                        Key="Software\Joris-van-der-Wel\GroovTubeHotkey"
+                        Name="Installed"
+                        Type="integer"
+                        Value="1"
+                        KeyPath="yes"
+                    />
+                </Component>
+            </Directory>
+        </StandardDirectory>
+
+        <!-- The default choice for installing the product per-machine or per-user -->
+        <Property Id="WixAppFolder" Value="WixPerUserFolder" />
+
+        <!-- The default folder name -->
+        <Property Id="ApplicationFolderName" Value="GroovTubeHotkey" />
+
+        <!-- The content of the license dialog -->
+        <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf" />
+
+        <!-- Load the WixUI_Advanced Dialog Set. Requires a directory with id "APPLICATIONFOLDER" -->
+        <!-- https://github.com/wixtoolset/UI.wixext/blob/master/src/wixlib/WixUI_Advanced.wxs -->
+        <ui:WixUI Id="WixUI_Advanced" />
+
+        <!--
+        Somewhere ProgramFilesFolder and ProgramFiles64Folder are being silently translated to something like
+        C:\Users\XXX\AppData\Local\Programs\GroovTubeHotkey
+        Which is confusing if the user has selected "per-machine". This is a workaround for that issue.
+        This is not so nice on systems where the location of the default program files has been changed, however
+        the user will still have an opportunity to change the path before continuing the installation.
+        -->
+        <CustomAction
+            Id="MyWixSetDefaultPerMachineFolder"
+            Property="WixPerMachineFolder"
+            Value="C:\Program Files\[ApplicationFolderName]"
+            Execute="immediate"
+        />
+        <InstallUISequence>
+            <Custom Action="MyWixSetDefaultPerMachineFolder" After="WixSetDefaultPerMachineFolder" />
+        </InstallUISequence>
+        <InstallExecuteSequence>
+            <Custom Action="MyWixSetDefaultPerMachineFolder" After="WixSetDefaultPerMachineFolder" />
+        </InstallExecuteSequence>
+
+    </Package>
+</Wix>
