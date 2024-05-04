@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use std::env;
 use log::info;
 use msgbox::IconType;
@@ -8,14 +10,6 @@ use groovtube_hotkey::error::{error_msgbox, AppRunError, ConfigError};
 // Example: `open ./target/debug/groovtube-hotkey`
 #[cfg(all(target_os = "macos"))]
 embed_plist::embed_info_plist!(concat!(env!("OUT_DIR"), "/Info.plist"));
-
-#[cfg(target_os = "windows")]
-fn windows_init() {
-    groovtube_hotkey::os::windows::hide_console_window();
-}
-
-#[cfg(not(target_os = "windows"))]
-fn windows_init() {}
 
 
 #[cfg(target_os = "macos")]
@@ -49,7 +43,6 @@ fn main() -> Result<(), AppRunError> {
     init_logging();
     info!(concat!("GroovTube Hotkey ", env!("CARGO_PKG_VERSION")));
 
-    windows_init();
     macos_init();
 
     let args = env::args();
