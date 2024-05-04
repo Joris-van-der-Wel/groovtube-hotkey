@@ -28,8 +28,9 @@ pub enum Message {
     ApplyDirtyConfig,
     WriteComplete(()),
     SymbolsFontLoadComplete(Result<(), FontError>),
-    ConfigLoadComplete(Config),
-    ConfigSaveComplete(bool), // true if success, false if failed
+    ConfigLoadComplete((Config, Option<String>)),
+    ConfigSaveComplete(Option<String>),
+    NoticeConfirmed,
     DeviceEvent(DeviceEvent),
     AddHotkey,
     HotkeyChange(usize, HotkeyChange),

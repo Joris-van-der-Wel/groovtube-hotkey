@@ -18,7 +18,7 @@ use crate::config::io::{ConfigIO};
 use crate::config::types::{BREATH_DIRECTIONS, BreathDirection, Config, HotkeyConfig};
 use crate::device::connection::connect_device_subscription;
 use crate::device::types::{DeviceEvent, DeviceState};
-use crate::error::{AppRunError, error_msgbox};
+use crate::error::AppRunError;
 use crate::gui::executor::MyExecutor;
 use crate::gui::open::open_link;
 use crate::gui::style::{TextButtonStyleSheet};
@@ -29,6 +29,14 @@ use crate::sim::types::{BreathInputSimCommand, Button as InputSimButton, BUTTONS
 
 const MUI_SYMBOLS_OUTLINED_FONT: Font = Font::with_name(MUI_SYMBOLS_OUTLINED_FAMILY);
 
+#[cfg(target_os = "macos")]
+fn check_accessibility_access() -> bool {
+    return crate::os::macos::check_accessibility_access(true);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn check_accessibility_access() -> bool{ true }
+
 pub struct ApplicationFlags {
     config_io: ConfigIO,
 }
@@ -36,6 +44,9 @@ pub struct ApplicationFlags {
 pub struct MyApplication {
     // this token is cancelled upon exit
     app_cancel: CancellationToken,
+
+    // messages that the user must click away
+    notices: Vec<String>,
 
     // current config, might not be saved to disk yet
     config_io: ConfigIO,
@@ -66,42 +77,41 @@ impl MyApplication {
         let config_io = self.config_io.clone();
 
         let fut = async move {
-            let config = config_io.read().await.unwrap_or_else(|err| {
-                if err.is_file_not_found_error() {
-                    // this is probably the first start of the app
-                    info!("Config file not found, using defaults");
+            let (config, error_message) = match config_io.read().await {
+                Ok(config) => (config, None),
+                Err(err) => {
+                    let mut error_message: Option<String> = None;
+
+                    if err.is_file_not_found_error() {
+                        // this is probably the first start of the app
+                        info!("Config file not found, using defaults");
+                    } else {
+                        error!("Failed to load config: {:?}", &err);
+                        error_message = Some(format!("Failed to load config: {}", &err));
+                    }
+                    (Config::default(), error_message)
                 }
-                else {
-                    error_msgbox("Failed to load config", &err);
-                }
-                Config::default()
-            });
+            };
 
             sender.send(BreathInputSimCommand::SetConfig(config.clone())).await
                 .expect("Failed to send config to breath_input_sim");
 
-            config
+            (config, error_message)
         };
 
         Command::perform(fut, Message::ConfigLoadComplete)
     }
 
     fn save_config(&self) -> Command<Message> {
-        let displayed_config_save_error = self.displayed_config_save_error;
         let config = self.config.clone();
         let config_io = self.config_io.clone();
 
         let fut = async move {
             match config_io.save(config).await {
-                Ok(_) => true,
+                Ok(_) => None,
                 Err(err) => {
-                    if displayed_config_save_error {
-                        error!("Failed to save config: {:?}", err);
-                    }
-                    else {
-                        error_msgbox("Failed to save config", &err);
-                    }
-                    false
+                    error!("Failed to save config: {:?}", &err);
+                    return Some(format!("Failed to save config: {}", &err));
                 },
             }
         };
@@ -126,7 +136,7 @@ impl MyApplication {
             match open_link(&url).await {
                 Ok(_) => true,
                 Err(err) => {
-                    error_msgbox("Failed to open link", &err);
+                    error!("Failed to open link: {:?}", &err);
                     false
                 },
             }
@@ -148,8 +158,27 @@ impl Application for MyApplication {
         // todo: wait for device connection to be closed when closing
         let (bis_event_sender, bis_command_sender, _) = breath_input_sim(app_cancel.clone());
 
+        let mut notices: Vec<String> = Vec::new();
+
+        if !check_accessibility_access() {
+            notices.push(
+                "This application translates human breath input to mouse and keyboard hotkeys. \
+To send mouse and keyboard hotkeys on macOS, \"accessibility\" access is required.
+
+Currently, this application does NOT have access to accessibility.
+
+This problem can be remedied by opening the \"System Settings\" app, navigating to \
+\"Privacy & Security\", and then \"Accessibility\". Add a checkmark next to \
+\"GroovTubeHotkey\", and then restart the application.
+
+If this does not work, remove the application from the list using the minus button, \
+restart the application, and repeat all the steps.".to_string()
+            );
+        }
+
         let app = MyApplication {
             app_cancel,
+            notices,
             config_io: flags.config_io,
             config: Config::default(),
             config_dirty: false,
@@ -176,9 +205,12 @@ impl Application for MyApplication {
                 result.expect("Failed to load symbols font");
                 info!("Symbols font load complete");
             },
-            Message::ConfigLoadComplete(config) => {
+            Message::ConfigLoadComplete((config, error_message)) => {
                 info!("Config load complete");
                 self.config = config;
+                if let Some(error_message) = error_message {
+                    self.notices.push(error_message);
+                }
             },
             Message::ApplyDirtyConfig => {
                 if self.config_dirty {
@@ -190,12 +222,19 @@ impl Application for MyApplication {
                     ]);
                 }
             },
-            Message::ConfigSaveComplete(success) => {
-                if !success {
-                    self.displayed_config_save_error = true;
+            Message::ConfigSaveComplete(error_message) => {
+                if !self.displayed_config_save_error {
+                    if let Some(error_message) = error_message {
+                        self.displayed_config_save_error = true;
+                        self.notices.push(error_message);
+                    }
                 }
             },
-
+            Message::NoticeConfirmed => {
+                if !self.notices.is_empty() {
+                    self.notices.remove(0);
+                }
+            },
             Message::LinkPress(url) => {
                 return self.open_link(url);
             },
@@ -285,6 +324,21 @@ impl Application for MyApplication {
     }
 
     fn view(&self) -> Element<Message> {
+        if let Some(notice) = self.notices.first() {
+            return container(
+                column![
+                    text(notice),
+
+                    button(text("Okay"))
+                        .on_press(Message::NoticeConfirmed),
+
+                ].align_items(Alignment::Center).spacing(20),
+            )
+            .width(Length::Fill)
+            .padding(20)
+            .into()
+        }
+
         let modifier_toggle = |
             description: &'static str,
             symbol: char,
