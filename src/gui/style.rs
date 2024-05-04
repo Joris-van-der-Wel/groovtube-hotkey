@@ -1,4 +1,4 @@
-use iced::{Color, Theme};
+use iced::{Border, Color, Shadow, Theme};
 use iced::widget::button::{StyleSheet, Appearance};
 
 pub struct TextButtonStyleSheet;
@@ -10,10 +10,13 @@ impl StyleSheet for TextButtonStyleSheet {
         Appearance {
             shadow_offset: Default::default(),
             background: None,
-            border_radius: 0.0.into(),
-            border_width: 0.0,
-            border_color: Color::TRANSPARENT,
             text_color: Color::BLACK,
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            shadow: Shadow::default(),
         }
     }
 }

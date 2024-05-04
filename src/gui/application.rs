@@ -1,9 +1,7 @@
 use futures::channel::mpsc::Sender;
 use futures::SinkExt;
-use iced::{
-    Alignment, Application, Command, Element, Event, Length, Settings, Subscription,
-    window,
-};
+use iced::{Alignment, Application, Command, Element, Length, Settings, Size, Subscription, window};
+use iced::event::{self, Event};
 use iced::font::{self, Font};
 use iced::time::{every as iced_time_every};
 use iced::theme::{self, Theme};
@@ -17,7 +15,7 @@ use log::{error, info};
 use tokio_util::sync::{CancellationToken};
 
 use crate::config::io::{ConfigIO};
-use crate::config::types::{BreathDirection, Config, HotkeyConfig};
+use crate::config::types::{BREATH_DIRECTIONS, BreathDirection, Config, HotkeyConfig};
 use crate::device::connection::connect_device_subscription;
 use crate::device::types::{DeviceEvent, DeviceState};
 use crate::error::{AppRunError, error_msgbox};
@@ -27,7 +25,7 @@ use crate::gui::style::{TextButtonStyleSheet};
 use crate::gui::types::{Message, HotkeyChange, HotkeyModifier};
 use crate::resources::{MUI_SYMBOLS_OUTLINED_BYTES, MUI_SYMBOLS_OUTLINED_FAMILY};
 use crate::sim::breath_input_sim::breath_input_sim;
-use crate::sim::types::{BreathInputSimCommand, Button as InputSimButton, Button};
+use crate::sim::types::{BreathInputSimCommand, Button as InputSimButton, BUTTONS as INPUT_SIM_BUTTONS};
 
 const MUI_SYMBOLS_OUTLINED_FONT: Font = Font::with_name(MUI_SYMBOLS_OUTLINED_FAMILY);
 
@@ -52,10 +50,6 @@ pub struct MyApplication {
     // latest state from the device
     latest_device_state: DeviceState,
     latest_breath_value: i8,
-
-    // PickList options:
-    breath_directions: Vec<BreathDirection>,
-    input_sim_buttons: Vec<InputSimButton>,
 }
 
 impl MyApplication {
@@ -163,8 +157,6 @@ impl Application for MyApplication {
             breath_input_sim_sender: (bis_event_sender, bis_command_sender),
             latest_device_state: DeviceState::Initial,
             latest_breath_value: 0,
-            breath_directions: BreathDirection::all(),
-            input_sim_buttons: InputSimButton::all(),
         };
 
         let command = Command::batch(vec![
@@ -207,10 +199,10 @@ impl Application for MyApplication {
             Message::LinkPress(url) => {
                 return self.open_link(url);
             },
-            Message::EventOccurred(Event::Window(window::Event::CloseRequested)) => {
+            Message::EventOccurred(Event::Window(id, window::Event::CloseRequested)) => {
                 info!("Close requested");
                 self.before_close();
-                return window::close();
+                return window::close(id);
             },
             Message::DeviceEvent(DeviceEvent::StateChange(state)) => {
                 self.latest_device_state = state;
@@ -228,7 +220,7 @@ impl Application for MyApplication {
                     modifier_ctrl: false,
                     modifier_meta: false,
                     modifier_alt: false,
-                    button: Button::MouseLeft,
+                    button: InputSimButton::MouseLeft,
                 });
                 self.config_dirty = true;
             },
@@ -283,7 +275,7 @@ impl Application for MyApplication {
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            iced::subscription::events().map(Message::EventOccurred),
+            event::listen().map(Message::EventOccurred),
             iced_time_every(Duration::from_secs(1)).map(|_| Message::ApplyDirtyConfig),
             connect_device_subscription(
                 self.app_cancel.clone(),
@@ -294,7 +286,7 @@ impl Application for MyApplication {
 
     fn view(&self) -> Element<Message> {
         let modifier_toggle = |
-            description: &str,
+            description: &'static str,
             symbol: char,
             checked: bool,
             on_press: Message,
@@ -318,7 +310,7 @@ impl Application for MyApplication {
 
             row![
                 PickList::new(
-                    &self.breath_directions,
+                    BREATH_DIRECTIONS,
                     Some(config.breath_direction),
                     move |value| Message::HotkeyChange(index, HotkeyChange::BreathDirectionChange(value)),
                 ).width(60),
@@ -339,7 +331,7 @@ impl Application for MyApplication {
                 ].spacing(2),
 
                 PickList::new(
-                    &self.input_sim_buttons,
+                    INPUT_SIM_BUTTONS,
                     Some(config.button),
                     move |value| Message::HotkeyChange(index, HotkeyChange::ButtonChange(value)),
                 ).width(200),
@@ -392,7 +384,7 @@ impl Application for MyApplication {
                             .iter()
                             .enumerate()
                             .map(|(index, config)| hotkey_form(index, config))
-                            .collect()
+                            .map(Element::from)
                     )
                         .spacing(30)
                         .width(Length::Shrink),
@@ -437,9 +429,9 @@ pub fn run_application() -> Result<(), AppRunError> {
     let mut settings = Settings::with_flags(flags);
 
     // handle exits ourselves (Event::CloseRequested)
-    settings.exit_on_close_request = false;
     settings.id = Some("groovtube-hotkey".to_string());
-    settings.window.size = (600, 700);
+    settings.window.exit_on_close_request = false;
+    settings.window.size = Size::new(600.0, 700.0);
     settings.window.resizable = false;
     settings.window.icon = Some(make_icon());
 

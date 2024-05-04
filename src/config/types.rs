@@ -1,20 +1,18 @@
 use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
-use enum_iterator::{all, Sequence};
 
 use crate::sim::types::Button;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Sequence, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BreathDirection {
     Puff,
     Sip,
 }
 
-impl BreathDirection {
-    pub fn all() -> Vec<BreathDirection> {
-        all::<BreathDirection>().collect::<Vec<_>>()
-    }
-}
+pub const BREATH_DIRECTIONS: [BreathDirection; 2] = [
+    BreathDirection::Puff,
+    BreathDirection::Sip,
+];
 
 impl std::fmt::Display for BreathDirection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
