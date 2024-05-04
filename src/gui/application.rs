@@ -13,6 +13,7 @@ use iced::widget::{
 use iced::window::icon;
 use iced::widget::tooltip::{Position as TooltipPosition};
 use std::time::{Duration};
+use log::{error, info};
 use tokio_util::sync::{CancellationToken};
 
 use crate::config::io::{ConfigIO};
@@ -74,7 +75,7 @@ impl MyApplication {
             let config = config_io.read().await.unwrap_or_else(|err| {
                 if err.is_file_not_found_error() {
                     // this is probably the first start of the app
-                    println!("Config file not found, using defaults");
+                    info!("Config file not found, using defaults");
                 }
                 else {
                     error_msgbox("Failed to load config", &err);
@@ -101,7 +102,7 @@ impl MyApplication {
                 Ok(_) => true,
                 Err(err) => {
                     if displayed_config_save_error {
-                        eprintln!("Failed to save config: {:?}", err);
+                        error!("Failed to save config: {:?}", err);
                     }
                     else {
                         error_msgbox("Failed to save config", &err);
@@ -181,10 +182,10 @@ impl Application for MyApplication {
         match message {
             Message::SymbolsFontLoadComplete(result) => {
                 result.expect("Failed to load symbols font");
-                println!("Symbols font load complete");
+                info!("Symbols font load complete");
             },
             Message::ConfigLoadComplete(config) => {
-                println!("Config load complete");
+                info!("Config load complete");
                 self.config = config;
             },
             Message::ApplyDirtyConfig => {
@@ -207,7 +208,7 @@ impl Application for MyApplication {
                 return self.open_link(url);
             },
             Message::EventOccurred(Event::Window(window::Event::CloseRequested)) => {
-                println!("Close requested");
+                info!("Close requested");
                 self.before_close();
                 return window::close();
             },

@@ -3,13 +3,14 @@ use tokio::spawn;
 use tokio::task::JoinHandle;
 use futures::StreamExt;
 use futures::channel::mpsc::{channel, Sender};
+use log::warn;
 use tokio_util::sync::CancellationToken;
 use rdev::{EventType, simulate};
 use crate::sim::types::{HeldButtons, InputSimCommand};
 
 fn send(event_type: &EventType) {
     if let Err(err) = simulate(event_type) {
-        println!("Failed to simulate {:?}: {:?}", event_type, err);
+        warn!("Failed to simulate {:?}: {:?}", event_type, err);
     }
 }
 

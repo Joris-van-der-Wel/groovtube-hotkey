@@ -9,6 +9,7 @@ use serde_json;
 use fd_lock::{RwLock, RwLockWriteGuard};
 use std::fs::OpenOptions;
 use std::str;
+use log::{error, info, warn};
 
 use crate::config::types::Config;
 use crate::error::ConfigError;
@@ -18,16 +19,16 @@ use crate::error::ConfigError;
 fn get_portable_config_path() -> Option<PathBuf> {
     match current_exe() {
         Ok(mut path) => {
-            // F:\foo.exe => F:\foo.josn
+            // F:\foo.exe => F:\foo.json
             if !path.set_extension("json") {
-                eprintln!("current exe has no filename: {}", path.to_string_lossy());
+                error!("current exe has no filename: {}", path.to_string_lossy());
                 return None
             }
 
             Some(path)
         },
         Err(err) => {
-            eprintln!("failed to get current exe path: {:?}", err);
+            error!("failed to get current exe path: {:?}", err);
             None
         },
     }
@@ -52,7 +53,7 @@ fn get_config_path() -> Result<PathBuf, ConfigError> {
                 }
             }
             Err(err) => {
-                eprintln!("Could not read metadata of: {}; Using local path instead. ({:?})", path.to_string_lossy(), err);
+                warn!("Could not read metadata of: {}; Using local path instead. ({:?})", path.to_string_lossy(), err);
             },
         }
 
@@ -91,7 +92,7 @@ pub struct ConfigIO {
 impl ConfigIO {
     pub fn new_sync() -> Result<Self, ConfigError> {
         let path = get_config_path()?;
-        println!("Using config file {}", path.to_string_lossy());
+        info!("Using config file {}", path.to_string_lossy());
 
         let directory = path.parent().expect("Failed to determine parent path of config path");
         std::fs::create_dir_all(directory)?;
@@ -129,7 +130,7 @@ impl ConfigIO {
 
     pub async fn read(&self) -> Result<Config, ConfigError> {
         let mut file = self.get_file()?;
-        println!("Reading config file");
+        info!("Reading config file");
 
         let mut content = vec![];
         file.read_to_end(&mut content).await?;
@@ -147,7 +148,7 @@ impl ConfigIO {
 
     pub async fn save(&self, config: Config) -> Result<(), ConfigError> {
         let mut file = self.get_file()?;
-        println!("Saving config");
+        info!("Saving config");
 
         let content = serde_json::to_string_pretty(&config)?;
         file.rewind().await?;

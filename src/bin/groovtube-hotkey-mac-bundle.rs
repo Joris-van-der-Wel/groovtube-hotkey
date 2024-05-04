@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::io::Write;
 use std::process::Command;
 use clap::{Parser};
+use log::info;
+use groovtube_hotkey::init_logging;
 
 const INFO_PLIST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Info.plist"));
 
@@ -36,7 +38,7 @@ trait CommandRun {
 
 impl CommandRun for Command {
     fn run(&mut self, check_status: bool) {
-        println!("{:?}", self);
+        info!("{:?}", self);
 
         let status = self
             .spawn().expect("Command failed to spawn")
@@ -49,6 +51,7 @@ impl CommandRun for Command {
 }
 
 fn main()  {
+    init_logging();
     let args = Args::parse();
     let icon_path = args.resources_path.join("icon.icns");
     let entitlements_path = args.resources_path.join("groovtube-hotkey.entitlements");
@@ -79,7 +82,7 @@ fn main()  {
     copy(args.binary_path, contents_macos_path.join("groovtube")).expect("Failed to copy main executable");
     copy(icon_path, contents_resources_path.join("icon.icns")).expect("Failed to copy icon.icns");
 
-    println!("GroovTubeHotkey.app has been created");
+    info!("GroovTubeHotkey.app has been created");
 
     let mut codesign = Command::new("/usr/bin/codesign");
     match &args.sign {
@@ -94,14 +97,14 @@ fn main()  {
         .arg("--entitlements").arg(entitlements_path)
         .arg(&app_path)
         .run(true);
-    println!("GroovTubeHotkey.app has been signed");
+    info!("GroovTubeHotkey.app has been signed");
 
     Command::new("/usr/bin/hdiutil")
         .arg("create")
         .arg("-srcFolder").arg(dmg_src_path)
         .arg("-o").arg(&dmg_path)
         .run(true);
-    println!("GroovTubeHotkey.dmg has been created");
+    info!("GroovTubeHotkey.dmg has been created");
 
     let mut codesign = Command::new("/usr/bin/codesign");
     match &args.sign {
@@ -115,7 +118,7 @@ fn main()  {
         .arg("-i").arg("nl.groovtube.groovtube-hotkey")
         .arg(&dmg_path)
         .run(true);
-    println!("GroovTubeHotkey.dmg has been signed");
+    info!("GroovTubeHotkey.dmg has been signed");
 
     if let Some(profile) = args.notarize {
         Command::new("/usr/bin/xcrun")
@@ -126,18 +129,18 @@ fn main()  {
             .arg(&profile)
             .arg("--wait")
             .run(true);
-        println!("GroovTubeHotkey.dmg has been submitted to apple's notary service.");
-        println!("To review any issues run: xcrun notarytool log <UUID> --keychain-profile '{}'", profile);
+        info!("GroovTubeHotkey.dmg has been submitted to apple's notary service.");
+        info!("To review any issues run: xcrun notarytool log <UUID> --keychain-profile '{}'", profile);
 
         Command::new("/usr/bin/xcrun")
             .arg("stapler")
             .arg("staple")
             .arg(&dmg_path)
             .run(true);
-        println!("GroovTubeHotkey.dmg has been stapled.");
+        info!("GroovTubeHotkey.dmg has been stapled.");
     }
 
-    println!("\nVerification result:");
+    info!("\nVerification result:");
 
     Command::new("/usr/bin/codesign")
         .arg("--verify")
@@ -155,7 +158,7 @@ fn main()  {
         .arg(&dmg_path)
         .run(false);
 
-    println!("\nAll done!");
+    info!("\nAll done!");
 }
 
 // TODO: The Info.plist file seems to be ignored in the menu that opens after clicking the

@@ -8,6 +8,7 @@ use btleplug;
 use iced;
 use serde_json;
 use futures::channel::mpsc::SendError;
+use log::error;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -82,8 +83,8 @@ pub fn readable_thread_panic_error(error: &Box<dyn Any + Send + 'static>) -> Str
 
 pub fn error_msgbox<T: Display>(message: &'static str, error: &T) {
     let message = format!("{}: {}", message, error);
-    eprintln!("{}", &message);
+    error!("{}", &message);
     if let Err(err) = msgbox::create(concat!("GroovTube Hotkey ", env!("CARGO_PKG_VERSION")), &message, IconType::Error) {
-        eprintln!("Failed to create msgbox: {:?}", err);
+        error!("Failed to create msgbox: {:?}", err);
     }
 }

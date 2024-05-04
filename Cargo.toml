@@ -10,11 +10,14 @@ clap = { version = "4.4.6", features = ["derive"] }
 directories-next = "2.0.0"
 enum-iterator = "1.4.1"
 fd-lock = "4.0.0"
+fern = { version = "0.6.2", default-features = false }
 futures = "0.3.28"
+humantime = "2.1.0"
 # disable the gpu renderer by disabling the default wgpu feature
 iced = { version = "0.10.0", default-features = false, features = ["tokio"] }
 iced_futures = "0.7.0"
 indexmap = "2.0.2"
+log = "0.4.21"
 msgbox = "0.7.0"
 open = "5.0.0"
 rdev = "0.5.3"

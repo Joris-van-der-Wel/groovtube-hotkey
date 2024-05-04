@@ -1,6 +1,7 @@
 use std::env;
+use log::info;
 use msgbox::IconType;
-use groovtube_hotkey::run;
+use groovtube_hotkey::{init_logging, run};
 use groovtube_hotkey::error::{error_msgbox, AppRunError, ConfigError};
 
 // This embedded Info.plist is used when launching the binary directly, instead of the app bundle.
@@ -45,7 +46,8 @@ fn macos_init() {}
 
 
 fn main() -> Result<(), AppRunError> {
-    println!(concat!("GroovTube Hotkey ", env!("CARGO_PKG_VERSION")));
+    init_logging();
+    info!(concat!("GroovTube Hotkey ", env!("CARGO_PKG_VERSION")));
 
     windows_init();
     macos_init();

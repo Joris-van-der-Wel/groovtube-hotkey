@@ -5,6 +5,7 @@ use futures::{StreamExt, SinkExt};
 use futures::channel::mpsc::Sender;
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
+use log::{debug, info, warn};
 use tokio::spawn;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -39,7 +40,7 @@ async fn start_scanning(manager: &Manager) -> Result<Vec<Adapter>, DeviceError> 
     };
 
     for adapter in &adapters {
-        println!("Scanning using adapter {}...", adapter.adapter_info().await.unwrap_or("UNKNOWN".to_string()));
+        info!("Scanning using adapter {}...", adapter.adapter_info().await.unwrap_or("UNKNOWN".to_string()));
         adapter.start_scan(filter.clone()).await?;
     }
 
@@ -53,7 +54,7 @@ async fn find_peripheral(adapters: &Vec<Adapter>) -> Result<Option<Peripheral>, 
         let peripherals = match adapter.peripherals().await {
             Ok(v) => v,
             Err(err) => {
-                eprintln!("Failed to query BLE adapter for peripherals: {}", err);
+                warn!("Failed to query BLE adapter for peripherals: {}", err);
                 continue;
             },
         };
@@ -63,15 +64,15 @@ async fn find_peripheral(adapters: &Vec<Adapter>) -> Result<Option<Peripheral>, 
 
             match properties {
                 Err(err) => {
-                    eprintln!("Could not query peripheral for properties: {:?}", err);
+                    warn!("Could not query peripheral for properties: {:?}", err);
                 },
                 Ok(None) => {
-                    eprintln!("Peripheral has no properties");
+                    warn!("Peripheral has no properties");
                 },
                 Ok(Some(properties)) => {
                     // Some environments ignore the filter, so make sure to check the service uuid again
                     if properties.services.contains(&melody_smart_service_uuid) {
-                        println!(
+                        info!(
                             "Using peripheral {} {:?} {} {:?}",
                             properties.address,
                             properties.address_type,
@@ -93,10 +94,10 @@ async fn connect_peripheral(peripheral: &Peripheral) -> Result<Characteristic, D
     let melody_smart_service_uuid = make_melody_smart_service_uuid();
     let melody_smart_data_uuid = make_melody_smart_data_uuid();
 
-    println!("Connecting to peripheral...");
+    info!("Connecting to peripheral...");
     peripheral.connect().await?;
 
-    println!("Connected; Discovering services...");
+    info!("Connected; Discovering services...");
     peripheral.discover_services().await?;
 
     for service in peripheral.services() {
@@ -109,7 +110,7 @@ async fn connect_peripheral(peripheral: &Peripheral) -> Result<Characteristic, D
                 continue;
             }
 
-            println!("Subscribing to characteristic {:?} {:?}", service.uuid, characteristic.uuid);
+            info!("Subscribing to characteristic {:?} {:?}", service.uuid, characteristic.uuid);
             peripheral.subscribe(&characteristic).await?;
             return Ok(characteristic.clone());
         }
@@ -130,7 +131,7 @@ async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionS
                     match start_scanning(&manager).await {
                         Ok(adapters) => Some(adapters),
                         Err(err) => {
-                            eprintln!("Scanning failed {:?}", err);
+                            warn!("Scanning failed {:?}", err);
 
                             let mut no_permission_error = false;
                             if let Some(source) = err.source() {
@@ -151,11 +152,11 @@ async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionS
                     ConnectionState::Connecting { peripheral }
                 },
                 Ok(None) => {
-                    eprintln!("No peripherals matched");
+                    debug!("No peripherals matched");
                     ConnectionState::Scanning { adapters, retry: true, no_permission: false }
                 },
                 Err(err) => {
-                    eprintln!("Finding peripheral failed: {:?}", err);
+                    warn!("Finding peripheral failed: {:?}", err);
                     ConnectionState::Scanning { adapters, retry: true, no_permission: false }
                 },
             }
@@ -164,7 +165,7 @@ async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionS
             let data_char = match connect_peripheral(&peripheral).await {
                 Ok(v) => v,
                 Err(err) => {
-                    eprintln!("Connecting to peripheral failed: {:?}", err);
+                    warn!("Connecting to peripheral failed: {:?}", err);
                     // If a peripheral fails to connect it might be because of the error:
                     //   Btle { source: Other("Error { code: HRESULT(0x80000013), message: \"The object has been closed.\" }") }
                     // In which case we have to obtain a new Peripheral. So go back to the scanning state
@@ -172,25 +173,25 @@ async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionS
                 },
             };
 
-            println!("Peripheral ready");
+            info!("Peripheral ready");
             ConnectionState::Connected { peripheral, data_char }
         },
         ConnectionState::Connected { peripheral, data_char } => {
             tokio::select! {
                 _ = sleep(Duration::from_millis(IS_CONNECTED_DEADLINE)) => {
                     // macOS
-                    eprintln!("Checking for connection status took too long");
+                    warn!("Checking for connection status took too long");
                     sleep(Duration::from_millis(CONNECT_DELAY)).await;
                     ConnectionState::Scanning { adapters: None, retry: true, no_permission: false }
                 }
                 result = peripheral.is_connected() => match result {
                     Err(err) => {
-                        eprintln!("Error checking for connection state: {:?}", err);
+                        warn!("Error checking for connection state: {:?}", err);
                         sleep(Duration::from_millis(CONNECT_DELAY)).await;
                         ConnectionState::Scanning { adapters: None, retry: true, no_permission: false }
                     },
                     Ok(false) => {
-                        eprintln!("Connection lost");
+                        warn!("Connection lost");
                         sleep(Duration::from_millis(CONNECT_DELAY)).await;
                         ConnectionState::Scanning { adapters: None, retry: true, no_permission: false }
                     },
@@ -206,11 +207,11 @@ async fn request_breath(peripheral: &Peripheral, data_char: &Characteristic) {
 
     tokio::select! {
         _ = sleep(Duration::from_millis(WRITE_DEADLINE)) => {
-            eprintln!("Sending to data characteristic took too long");
+            warn!("Sending to data characteristic took too long");
         }
         result = fut => {
             if let Err(err) = result {
-                eprintln!("Failed to send to data characteristic: {:?}", err);
+                warn!("Failed to send to data characteristic: {:?}", err);
             }
         }
     };
@@ -235,7 +236,7 @@ fn read_notifications_task(cancel: CancellationToken, peripheral: &Peripheral, m
                         let str = String::from_utf8_lossy(data.value.as_slice());
 
                         match u16::from_str_radix(&str, 16) {
-                            Err(err) => eprintln!("Failed to decode breath value {:?}", err),
+                            Err(err) => warn!("Failed to decode breath value {:?}", err),
                             Ok(parsed) => {
                                 let range = BREATH_RANGE as f32;
 
@@ -313,11 +314,11 @@ async fn connect_device(cancel: CancellationToken, mut senders: Vec<Sender<Devic
                 connection_cancel = CancellationToken::new();
 
                 if let Some(handle) = read_notifications_task_handle.take() {
-                    println!("Waiting for read notifications task to stop");
+                    info!("Waiting for read notifications task to stop");
                     handle.await
                         .expect("Failed to join read notifications task")
                         .expect("Error during read notifications task");
-                    println!("Read notifications task stopped")
+                    info!("Read notifications task stopped")
                 }
             },
         }
