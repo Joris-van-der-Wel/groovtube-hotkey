@@ -368,7 +368,7 @@ impl std::fmt::Display for Button {
             Button::ControlRight => "Control Right",
             Button::Delete => "Delete",
             Button::Dot => ".",
-            Button::DownArrow => "DownArrow",
+            Button::DownArrow => "Down Arrow",
             Button::End => "End",
             Button::Equal => "=",
             Button::Escape => "Esc",
