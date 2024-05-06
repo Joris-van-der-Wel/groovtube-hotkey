@@ -2,9 +2,10 @@ use std::env;
 use std::fs::{copy, create_dir, File};
 use std::path::PathBuf;
 use std::io::Write;
-use std::process::Command;
+use std::process::{Command, Output};
 use clap::{Parser};
 use log::info;
+use x509_parser::pem::Pem;
 use groovtube_hotkey::init_logging;
 
 const INFO_PLIST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Info.plist"));
@@ -34,6 +35,7 @@ struct Args {
 
 trait CommandRun {
     fn run(&mut self, check_status: bool);
+    fn run_capture_output(&mut self, check_status: bool) -> Output;
 }
 
 impl CommandRun for Command {
@@ -47,6 +49,19 @@ impl CommandRun for Command {
         if check_status {
             assert!(status.success(), "Command failed: {}", status);
         }
+    }
+
+    fn run_capture_output(&mut self, check_status: bool) -> Output {
+        info!("{:?}", self);
+
+        let output = self
+            .output().expect("Command failed to spawn");
+
+        if check_status {
+            assert!(output.status.success(), "Command failed: {}", output.status);
+        }
+
+        return output;
     }
 }
 
@@ -84,12 +99,48 @@ fn main()  {
 
     info!("GroovTubeHotkey.app has been created");
 
+    // (the team ID)
+    let cert_subject_ou: Option<String> = match &args.sign {
+        None => None,
+        Some(cert) => {
+            let output = Command::new("/usr/bin/security")
+                .arg("find-certificate")
+                .arg("-c").arg(cert)
+                .arg("-p")
+                .run_capture_output(true);
+
+            let mut result: Option<String> = None;
+
+            for pem in Pem::iter_from_buffer(&output.stdout) {
+                let pem = pem.expect("Failed to decode PEM certificate");
+                let x509 = pem.parse_x509().expect("Failed to decode DER certificate");
+                for ou in x509.subject.iter_organizational_unit() {
+                    result = Some(
+                        ou.as_str().expect("Failed to decode certificate subject OU")
+                            .to_string()
+                    );
+                }
+            }
+
+            result
+        },
+    };
+
     let mut codesign = Command::new("/usr/bin/codesign");
     match &args.sign {
         None => codesign
             .arg("--sign").arg("-"), // adhoc
         Some(cert) => codesign
             .arg("--sign").arg(cert)
+            .arg("--requirements")
+            .arg(format!(
+                "=designated => identifier \"nl.groovtube.groovtube-hotkey\" and \
+                anchor apple generic and \
+                certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and \
+                certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and \
+                certificate leaf[subject.OU] = \"{}\"",
+                cert_subject_ou.expect("Could not find certificate subject OU")
+            ))
             .arg("--timestamp"), // adhoc does not work using apple's timestamp authority server
     };
     codesign
@@ -142,8 +193,48 @@ fn main()  {
 
     info!("\nVerification result:");
 
+    // This command should output the line "satisfies its Designated Requirement".
+    // If not, the app will launch, however it will not be possible to access bluetooth and
+    // accessibility. System Setting will list that the app has access, however the access will
+    // not be applied because The Designated Requirement is incorrect.
+    // There are several things to check:
+    //
+    // Access is stored in Apple's TCC sqlite database. The Designated Requirement is stored in
+    // the "csreq" column in the table "access" in "TCC.db".
+    // This database can be found at:
+    //   /Library/Application\ Support/com.apple.TCC/TCC.db
+    //   ~/Library/Application\ Support/com.apple.TCC/TCC.db
+    // And can be accessed by temporarily giving the terminal Full Disk Access. Example query:
+    //   sqlite3 /Library/Application\ Support/com.apple.TCC/TCC.db \
+    //   'select service, client, auth_value, auth_reason, HEX(csreq) from access where client = "nl.groovtube.groovtube-hotkey"'
+    // Or, to dump the entire database:
+    //   sqlite3 /Library/Application\ Support/com.apple.TCC/TCC.db .dump
+    //
+    // This app requires the "service": "kTCCServiceBluetoothAlways" (user TCC.cb) and "kTCCServiceAccessibility" (global TCC.db).
+    // "auth_value" is one of: denied(0), unknown(1), allowed(2), or limited(3).
+    // The "csreq" can be decoded as follows:
+    //   echo 'fade0c...' | xxd -r -p | csreq -r- -t
+    //
+    // The Designated Requirement of the app can be extracted as follows:
+    //  ` codesign -d -r-` GroovTubeHotkey.app
+    // This will look like:
+    //   designated => identifier "nl.groovtube.groovtube-hotkey" and certificate leaf = H"85022bd9cff596d57c094a8265e7798fd3d9a201"
+    // For syntax see:
+    //   https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/RequirementLang/RequirementLang.html
+    //
+    // The certificates that were used to sign the app can be extracted as follows:
+    //   codesign -dvvv --extract-certificates GroovTubeHotkey.app
+    // This will place codesign0, codesign1, codesign2 in the current directory.
+    // "certificate leaf" refers to codesign0, "certificate root" refers to the highest number (codesign2)
+    // The SHA1 fingerprint can be extracted as follows:
+    //   openssl x509 -inform DER -in codesign0 -text -fingerprint
+    // This should correspond to the hex value of the "certificate leaf" requirement statement
+    //
+    // It is possible to test for requirements manually using codesign -R='certificate leaf = H"123..."'
+
     Command::new("/usr/bin/codesign")
         .arg("--verify")
+        .arg("--requirements").arg("-")
         .arg("--deep")
         .arg("--strict")
         .arg("--verbose=2")
