@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tokio::time::{sleep, Duration};
 
-use crate::device::constants::{make_melody_smart_service_uuid, make_melody_smart_data_uuid, CONNECT_DELAY, POLL_DELAY, COMMAND_REQUEST_BREATH, BREATH_RANGE, IS_CONNECTED_DEADLINE, WRITE_DEADLINE};
+use crate::device::constants::{make_melody_smart_service_uuid, make_melody_smart_data_uuid, CONNECT_DELAY, POLL_DELAY, COMMAND_REQUEST_BREATH, BREATH_RANGE, IS_CONNECTED_DEADLINE, WRITE_DEADLINE, COMMAND_LED_LEFT_ON};
 use crate::device::types::{DeviceEvent, DeviceState};
 use crate::error::DeviceError;
 
@@ -173,6 +173,8 @@ async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionS
                 },
             };
 
+            send_led_left_on(&peripheral, &data_char).await;
+            
             info!("Peripheral ready");
             ConnectionState::Connected { peripheral, data_char }
         },
@@ -200,6 +202,21 @@ async fn advance_state(state: ConnectionState, manager: &Manager) -> ConnectionS
             }
         },
     }
+}
+
+async fn send_led_left_on(peripheral: &Peripheral, data_char: &Characteristic) {
+    let fut = peripheral.write(&data_char, &COMMAND_LED_LEFT_ON, WriteType::WithResponse);
+
+    tokio::select! {
+        _ = sleep(Duration::from_millis(WRITE_DEADLINE)) => {
+            warn!("Sending to data characteristic took too long");
+        }
+        result = fut => {
+            if let Err(err) = result {
+                warn!("Failed to send to data characteristic: {:?}", err);
+            }
+        }
+    };
 }
 
 async fn request_breath(peripheral: &Peripheral, data_char: &Characteristic) {

@@ -32,7 +32,7 @@ pub const MELODY_SMART_DATA_CHARACTERISTIC: &str = "06d1e5e7-79ad-4a71-8faa-3737
 // pub const MELODY_SMART_COMMAND_CHARACTERISTIC: &str = "818ae306-9c5b-448d-b51a-7add6a5d314d";
 
 pub const COMMAND_REQUEST_BREATH: [u8; 2] = [0x3F, 0x62]; // ?b
-// pub const COMMAND_LED_LEFT_ON: [u8; 2] = [0x6C, 0x31]; // l1
+pub const COMMAND_LED_LEFT_ON: [u8; 2] = [0x6C, 0x31]; // l1
 // pub const COMMAND_LED_LEFT_OFF: [u8; 2] = [0x6C, 0x30]; // l0
 // pub const COMMAND_LED_RIGHT_ON: [u8; 2] = [0x72, 0x31]; // r1
 // pub const COMMAND_LED_RIGHT_OFF: [u8; 2] = [0x72, 0x30]; // r0
