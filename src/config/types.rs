@@ -63,7 +63,7 @@ impl Default for Config {
             hotkeys: vec![
                 HotkeyConfig {
                     breath_direction: BreathDirection::Sip,
-                    threshold: Some(30),
+                    threshold: Some(8),
                     modifier_shift: false,
                     modifier_ctrl: false,
                     modifier_meta: false,
@@ -72,7 +72,7 @@ impl Default for Config {
                 },
                 HotkeyConfig {
                     breath_direction: BreathDirection::Puff,
-                    threshold: Some(30),
+                    threshold: Some(7),
                     modifier_shift: false,
                     modifier_ctrl: false,
                     modifier_meta: false,
